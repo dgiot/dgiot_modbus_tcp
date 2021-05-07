@@ -30,8 +30,8 @@
 
 start(_StartType, _StartArgs) ->
     shuwa_data:init(?DGIOT_ACREL_DTU),
-    {ok, Sup} = shuwa_sinmahe_sup:start_link(),
-    Spec =  shuwa_sinmahe:start_http(),
+    {ok, Sup} = dgiot_acrel_sup:start_link(),
+    Spec =  dgiot_acrel:start_http(),
     {ok, _} = supervisor:start_child(Sup, Spec),
     {ok, Sup}.
 
