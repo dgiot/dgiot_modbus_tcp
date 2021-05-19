@@ -23,8 +23,8 @@
     product = <<>>,
     deviceId = <<>>,
     scale = 10,
-    temperature = 0
-}).
+    temperature = 0,
+    address = <<>>}).
 %% API
 -export([start/2]).
 
@@ -164,69 +164,122 @@ init(#tcp{state = #state{id = ChannelId}} = TCPState) ->
             {stop, not_find_channel}
     end.
 
-
+%% 9C A5 25 CD 00 DB
+%% 11 04 02 06 92 FA FE
 handle_info({tcp, Buff}, #tcp{socket = Socket, state = #state{id = ChannelId, devaddr = <<>>, head = Head, len = Len, product = ProductId} = State} = TCPState) ->
     shuwa_bridge:send_log(ChannelId, "DTU revice from  ~p", [shuwa_utils:binary_to_hex(Buff)]),
     DTUIP = shuwa_evidence:get_ip(Socket),
     DtuAddr = shuwa_utils:binary_to_hex(Buff),
     List = shuwa_utils:to_list(DtuAddr),
+    List1 = shuwa_utils:to_list(Buff),
+    #{<<"objectId">> := DeviceId} =
+        shuwa_parse:get_objectid(<<"Device">>, #{<<"product">> => ProductId, <<"devaddr">> => DtuAddr}),
     case re:run(DtuAddr, Head, [{capture, first, list}]) of
         {match, [Head]} when length(List) == Len ->
-            #{<<"objectId">> := DeviceId} =
-                shuwa_parse:get_objectid(<<"Device">>, #{<<"product">> => ProductId, <<"devaddr">> => DtuAddr}),
-            create_device(DeviceId, ProductId, DtuAddr, DTUIP),
-            {noreply, TCPState#tcp{buff = <<>>, state = State#state{devaddr = DtuAddr, deviceId = DeviceId}}};
-        _ ->
-            {noreply, TCPState#tcp{buff = <<>>}}
+            {DevId, Devaddr} =
+                case create_device(DeviceId, ProductId, DtuAddr, DTUIP) of
+                    {<<>>, <<>>} ->
+                        {<<>>, <<>>};
+                    {DevId1, Devaddr1} ->
+%%                        erlang:send_after(5 * 1000, self(), readmodel),
+                        {DevId1, Devaddr1}
+                end,
+            {noreply, TCPState#tcp{buff = <<>>, state = State#state{devaddr = Devaddr, deviceId = DevId}}};
+        _Error ->
+            case re:run(Buff, Head, [{capture, first, list}]) of
+                {match, [Head]} when length(List1) == Len ->
+                    shuwa_pumpdtu:create_device(DeviceId, ProductId, Buff, DTUIP),
+                    {noreply, TCPState#tcp{buff = <<>>, state = State#state{devaddr = Buff}}};
+                Error1 ->
+                    lager:info("Error1 ~p Buff ~p ", [Error1, shuwa_utils:to_list(Buff)]),
+                    {noreply, TCPState#tcp{buff = <<>>}}
+            end
     end;
 
-handle_info({tcp, Buff}, #tcp{state = #state{id = ChannelId, devaddr = DevAddr, deviceId = _DeviceId, product = ProductId, scale = Scale, temperature = Temperature} = State} = TCPState) ->
-    shuwa_bridge:send_log(ChannelId, "Acrel revice from  ~p", [shuwa_utils:binary_to_hex(Buff)]),
-    <<SlaveId:8, _FunCode:8, Len:8, ResponseData/binary>> = Buff,
-    case SlaveId of
-        1 ->
-            case Len of
-                2 ->
-                    <<Data:Len/binary, _Crc/binary>> = ResponseData,
-                    <<_Type:8, Scale1:8>> = Data,
-                    {noreply, TCPState#tcp{state = State#state{scale = Scale1}}};
-                6 ->
-                    <<Data:Len/binary, _Crc/binary>> = ResponseData,
-                    <<L1:16, L2:16, L3:16>> = Data,
-                    NewL1 = L1 / Scale,
-                    NewL2 = L2 / Scale,
-                    NewL3 = L3 / Scale,
-                    Map = #{<<"l1_current">> => NewL1,
-                        <<"l2_current">> => NewL2,
-                        <<"l3_current">> => NewL3,
-                        <<"temperature">> => Temperature},
-                    shuwa_tdengine_adapter:save(ProductId, DevAddr, Map);
+handle_info({tcp, Buff}, #tcp{state = #state{id = ChannelId, devaddr = DtuAddr, address = Topic, product = DtuProductId} = State} = TCPState) ->
+    shuwa_bridge:send_log(ChannelId, "revice from  ~p", [shuwa_utils:binary_to_hex(Buff)]),
+    case binary:split(Topic, <<$/>>, [global, trim]) of
+        [<<"thing">>, DtuProductId, DtuAddr, _SlaveId, Address] ->
+            case modbus_rtu:parse_frame(Buff, [], #{
+                <<"dtuproduct">> => DtuProductId,
+                <<"channel">> => ChannelId,
+                <<"dtuaddr">> => DtuAddr,
+                <<"address">> => Address}) of
+                {_, Things} ->
+                    lists:map(fun(X) ->
+                        NewTopic = <<"thing/", DtuProductId/binary, "/", DtuAddr/binary, "/post">>,
+                        shuwa_bridge:send_log(ChannelId, "end to_task: ~p: ~p ~n", [NewTopic, jsx:encode(X)]),
+                        shuwa_mqtt:publish(DtuAddr, NewTopic, jsx:encode(X))
+                              end, Things);
                 _ ->
-                    {noreply, TCPState}
-            end,
-            Topic = <<"thing/", ProductId/binary, "/", DevAddr/binary, "/post">>,
-            shuwa_mqtt:publish(self(), Topic, shuwa_utils:binary_to_hex(Buff)),
-            {noreply, TCPState};
-        17 ->
-            case Len of
-                2 ->
-                    <<Data:16, _Crc/binary>> = ResponseData,
-                    NewData = (Data - 10000) / 100,
-                    Topic = <<"thing/", ProductId/binary, "/", DevAddr/binary, "/post">>,
-                    shuwa_mqtt:publish(self(), Topic, shuwa_utils:binary_to_hex(Buff)),
-                    {noreply, TCPState#tcp{state = State#state{temperature = NewData}}};
-                _ ->
+                    pass
+            end;
+        _ -> pass
+    end,
+    {noreply, TCPState#tcp{buff = <<>>, state = State#state{address = <<>>}}};
+
+handle_info({deliver, Topic, Msg}, #tcp{state = #state{id = ChannelId, product = DtuProductId} = State} = TCPState) ->
+    Payload = shuwa_mqtt:get_payload(Msg),
+    shuwa_bridge:send_log(ChannelId, "begin from_task: ~ts: ~p ", [unicode:characters_to_list(Topic), Payload]),
+    case jsx:is_json(Payload) of
+        true ->
+            Data = jsx:decode(Payload, [{labels, binary}, return_maps]),
+            case binary:split(Topic, <<$/>>, [global, trim]) of
+                %%接收task采集指令
+                [<<"thing">>, DtuProductId, _DtuAddr] ->
+                    case Data of
+                        #{<<"thingdata">> := #{
+                            <<"command">> := <<"r">>,
+                            <<"data">> := Value,
+                            <<"di">> := Di,
+                            <<"pn">> := SlaveId,
+                            <<"product">> := ProductId,
+                            <<"protocol">> := <<"modbus">>}} ->
+                            Datas = modbus_rtu:to_frame(#{
+                                <<"addr">> => SlaveId,
+                                <<"value">> => Value,
+                                <<"productid">> => ProductId,
+                                <<"di">> => Di
+                            }),
+                            lists:map(fun(X) ->
+                                shuwa_bridge:send_log(ChannelId, "to_device: ~p ", [shuwa_utils:binary_to_hex(X)]),
+                                shuwa_tcp_server:send(TCPState, X)
+                                      end, Datas);
+                        _ -> pass
+                    end,
+                    {noreply, TCPState#tcp{state = State#state{address = Topic}, buff = <<>>}};
+                %%接收task汇聚过来的整个dtu物模型采集的数据
+                [App, DtuProductId, DtuAddr] ->
+                    shuwa_pumpdtu:save_dtu(Data#{<<"devaddr">> => DtuAddr, <<"app">> => App}),
+                    {noreply, TCPState};
+                _Other ->
+                    lager:info("_Other ~p ", [_Other]),
                     {noreply, TCPState}
             end;
-        _ ->
+        false ->
             {noreply, TCPState}
     end;
 
-handle_info(login, #tcp{state = #state{devaddr = DevAddr, deviceId = DeviceId, product = ProductId, id = ChannelId}} = TCPState) ->
-    shuwa_bridge:send_log(ChannelId, "ChannelId ~p DevAddr ~p DeviceId ~p", [ChannelId, DevAddr, DeviceId]),
-    shuwa_mqtt:subscribe(<<"thing/", ProductId/binary, "/", DevAddr/binary>>),
-    erlang:send_after(1000, self(), sendscale),
-    {noreply, TCPState#tcp{buff = <<>>}};
+%% 发送读取物模型指令
+handle_info(readmodel, #tcp{state = #state{id = ChannelId, product = ProductId}} = TCPState) ->
+    Datas = dgiot_acrel_decoder:to_frame(ProductId),
+    case length(Datas) > 0 of
+        true ->
+            lists:map(fun(X) ->
+                shuwa_bridge:send_log(ChannelId, "to_dtu: ~p ", [shuwa_utils:binary_to_hex(X)]),
+                shuwa_tcp_server:send(TCPState, X)
+                      end, Datas),
+            case shuwa_data:get({ChannelId, heartbeat}) of
+                not_find ->
+                    erlang:send_after(10 * 1000, self(), readmodel);
+                {Heartbeat, _} ->
+                    erlang:send_after(Heartbeat * 1000, self(), readmodel)
+            end,
+            {noreply, TCPState};
+        fasle ->
+            {stop, noreply, TCPState}
+    end;
+
 
 %%比例因子
 %%01 03 02 03 0A 38 B3
@@ -308,20 +361,43 @@ create_device(DeviceId, ProductId, DTUMAC, DTUIP) ->
         {ok, #{<<"ACL">> := Acl, <<"devType">> := DevType}} ->
             case shuwa_parse:get_object(<<"Device">>, DeviceId) of
                 {ok, #{<<"results">> := [#{<<"devaddr">> := _GWAddr} | _] = _Result}} ->
-                    shuwa_parse:update_object(<<"Device">>, DeviceId, #{<<"ip">> => DTUIP, <<"status">> => <<"ONLINE">>});
+                    shuwa_parse:update_object(<<"Device">>, DeviceId, #{<<"ip">> => DTUIP, <<"status">> => <<"ONLINE">>}),
+                    {DeviceId, DTUMAC};
                 _ ->
                     shuwa_shadow:create_device(#{
                         <<"devaddr">> => DTUMAC,
-                        <<"name">> => <<"电动机保护器"/utf8, DTUMAC/binary>>,
+                        <<"name">> => <<"USRDTU", DTUMAC/binary>>,
                         <<"ip">> => DTUIP,
                         <<"isEnable">> => true,
                         <<"product">> => ProductId,
                         <<"ACL">> => Acl,
                         <<"status">> => <<"ONLINE">>,
                         <<"location">> => #{<<"__type">> => <<"GeoPoint">>, <<"longitude">> => 120.161324, <<"latitude">> => 30.262441},
-                        <<"brand">> => <<"电动机保护器"/utf8>>,
+                        <<"brand">> => <<"USRDTU">>,
                         <<"devModel">> => DevType
-                    })
+                    }),
+                    shuwa_task:save_pnque(ProductId, DTUMAC, ProductId, DTUMAC),
+                    create_instruct(Acl, ProductId, DTUMAC),
+                    {DeviceId, DTUMAC}
             end;
-        Error2 -> lager:info("Error2 ~p ", [Error2])
+        Error2 ->
+            lager:info("Error2 ~p ", [Error2]),
+            {<<>>, <<>>}
+    end.
+
+
+create_instruct(ACL, DtuProductId, DtuDevId) ->
+    case shuwa_shadow:lookup_prod(DtuProductId) of
+        {ok, #{<<"thing">> := #{<<"properties">> := Properties}}} ->
+            lists:map(fun(Y) ->
+                case Y of
+                    #{<<"dataForm">> := #{<<"slaveid">> := 256}} ->   %%不做指令
+                        pass;
+                    #{<<"dataForm">> := #{<<"slaveid">> := SlaveId}} ->
+                        Pn = shuwa_utils:to_binary(SlaveId),
+                        shuwa_instruct:create(DtuProductId, DtuDevId, Pn, ACL, <<"all">>, #{<<"properties">> => [Y]});
+                    _ -> pass
+                end
+                      end, Properties);
+        _ -> pass
     end.

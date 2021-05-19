@@ -36,6 +36,11 @@ get_deviceid(ProdcutId, DevAddr) ->
         shuwa_parse:get_objectid(<<"Device">>, #{<<"product">> => ProdcutId, <<"devaddr">> => DevAddr}),
     DeviceId.
 
+
+send()->
+
+    ok.
+
 send(DeviceId, Name, FaultRule, #{
     <<"FaultType">> := FaultType,
     <<"FaultLevel">> := FaultLevel,
