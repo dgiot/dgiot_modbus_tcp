@@ -23,9 +23,9 @@
 %%    shuwa_http_server:bind(<<"/pump">>, ?MODULE, [], Metadata)
 %% 2. 从模块的priv/swagger/下导入
 %%    shuwa_http_server:bind(<<"/swagger_feeders.json">>, ?MODULE, [], priv)
-swagger_feeders() ->
+swagger_modbus_tcp() ->
     [
-        shuwa_http_server:bind(<<"/swagger_feeders.json">>, ?MODULE, [], priv)
+        shuwa_http_server:bind(<<"/swagger_modbus_tcp.json">>, ?MODULE, [], priv)
     ].
 
 
