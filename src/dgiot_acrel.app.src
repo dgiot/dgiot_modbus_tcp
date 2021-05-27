@@ -1,7 +1,0 @@
-{application,dgiot_acrel,
-             [{description,"树蛙安瑞科应用"},
-              {vsn,"1.0.0"},
-              {modules,[]},
-              {registered,[dgiot_acrel_sup]},
-              {applications,[kernel,stdlib,shuwa_framework]},
-              {mod,{dgiot_acrel_app,[]}}]}.

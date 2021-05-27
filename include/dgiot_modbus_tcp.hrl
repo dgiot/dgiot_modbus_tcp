@@ -14,26 +14,21 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
-%% @doc dgiot_acrel Application
--module(dgiot_acrel_app).
--include("dgiot_acrel.hrl").
--behaviour(application).
--emqx_plugin(?MODULE).
-
-%% Application callbacks
--export([start/2, stop/1]).
-
+%% @doc dgiot_modbus_tcp COMMAND.
 
 %%--------------------------------------------------------------------
-%% Application callbacks
+%% Frame Size Limits
+%%
+%% To prevent malicious clients from exploiting memory allocation in a server,
+%% servers MAY place maximum limits on:
+%%
+%% the number of frame headers allowed in a single frame
+%% the maximum length of header lines
+%% the maximum size of a frame body
+%%
+%% If these limits are exceeded the server SHOULD send the client an ERROR frame
+%% and then close the connection.
 %%--------------------------------------------------------------------
 
-start(_StartType, _StartArgs) ->
-    shuwa_data:init(?DGIOT_ACREL_DTU),
-    {ok, Sup} = dgiot_acrel_sup:start_link(),
-    Spec =  dgiot_acrel:start_http(),
-    {ok, _} = supervisor:start_child(Sup, Spec),
-    {ok, Sup}.
+-define(dgiot_modbus_tcp_DTU, dgiot_modbus_tcp_dtu_ets).
 
-stop(_State) ->
-    ok.

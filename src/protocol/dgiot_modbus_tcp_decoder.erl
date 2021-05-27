@@ -9,7 +9,7 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--module(dgiot_acrel_decoder).
+-module(dgiot_modbus_tcp_decoder).
 -author("stoneliu").
 
 -define(ILLEGAL_FUNCTION, 1).

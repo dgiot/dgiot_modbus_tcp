@@ -14,9 +14,9 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
-%% @doc dgiot_acrel supervisor
--module(dgiot_acrel_sup).
--include("dgiot_acrel.hrl").
+%% @doc dgiot_modbus_tcp supervisor
+-module(dgiot_modbus_tcp_sup).
+-include("dgiot_modbus_tcp.hrl").
 -behaviour(supervisor).
 
 %% API

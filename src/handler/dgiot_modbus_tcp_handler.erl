@@ -6,7 +6,7 @@
 %%% Created : 20. 三月 2021 12:00
 %%% @end
 %%%-------------------------------------------------------------------
--module(dgiot_acrel_handler).
+-module(dgiot_modbus_tcp_handler).
 -author("stoneliu").
 -behavior(shuwa_rest).
 -shuwa_rest(all).

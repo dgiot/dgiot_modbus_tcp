@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 20. 三月 2021 12:00
 %%%-------------------------------------------------------------------
--module(dgiot_acrel).
+-module(dgiot_modbus_tcp).
 -author("stoneliu").
 
 -export([
@@ -24,7 +24,7 @@
 ]).
 
 start_http() ->
-    Port = application:get_env(dgiot_acrel, port, 80),
+    Port = application:get_env(dgiot_modbus_tcp, port, 80),
     {file, Here} = code:is_loaded(?MODULE),
     Dir = filename:dirname(filename:dirname(Here)),
     Root = shuwa_httpc:url_join([Dir, "/priv/"]),
@@ -191,7 +191,7 @@ get_sinmahe_json() ->
 create_subdev(ProductId, DevAddr, Type) ->
     SubProductId = shuwa_data:get({simahe, Type}),
     SubDevaddr = <<Type/binary, "_", DevAddr/binary>>,
-    case shuwa_parse:get_object(<<"Device">>, dgiot_acrel:get_deviceid(SubProductId, SubDevaddr)) of
+    case shuwa_parse:get_object(<<"Device">>, dgiot_modbus_tcp:get_deviceid(SubProductId, SubDevaddr)) of
         {ok, #{<<"objectId">> := _ObjectId}} -> pass;
         _ ->
             Device = #{
@@ -206,7 +206,7 @@ create_subdev(ProductId, DevAddr, Type) ->
                     <<"objectId">> => SubProductId},
                 <<"parentId">> => #{<<"__type">> => <<"Pointer">>,
                     <<"className">> => <<"Device">>,
-                    <<"objectId">> => dgiot_acrel:get_deviceid(ProductId, DevAddr)},
+                    <<"objectId">> => dgiot_modbus_tcp:get_deviceid(ProductId, DevAddr)},
                 <<"route">> => #{DevAddr => SubDevaddr}
             },
             shuwa_parse:create_object(<<"Device">>, Device)
@@ -218,7 +218,7 @@ update_runstate(ProductId,DevAddr,Data) ->
         RunState ->
             case shuwa_data:get({sinmahe_runstate, DevAddr}) of
                 RunState -> pass;
-                _  ->  case shuwa_parse:get_object(<<"Device">>, dgiot_acrel:get_deviceid(ProductId, DevAddr)) of
+                _  ->  case shuwa_parse:get_object(<<"Device">>, dgiot_modbus_tcp:get_deviceid(ProductId, DevAddr)) of
                            {ok, #{<<"objectId">> := ObjectId, <<"basedata">> := BaseData}} ->
                                shuwa_parse:update_object(<<"Device">>, ObjectId, #{<<"isEnable">> => false,
                                    <<"basedata">> => BaseData#{<<"RunState">> => RunState}});
@@ -234,7 +234,7 @@ update_powerstate(ProductId,DevAddr,Data) ->
         RunState ->
             case shuwa_data:get({sinmahe_runstate, DevAddr}) of
                 RunState -> pass;
-                _  ->  case shuwa_parse:get_object(<<"Device">>, dgiot_acrel:get_deviceid(ProductId, DevAddr)) of
+                _  ->  case shuwa_parse:get_object(<<"Device">>, dgiot_modbus_tcp:get_deviceid(ProductId, DevAddr)) of
                            {ok, #{<<"objectId">> := ObjectId, <<"basedata">> := BaseData}} ->
                                shuwa_parse:update_object(<<"Device">>, ObjectId, #{<<"isEnable">> => false,
                                    <<"basedata">> => BaseData#{<<"PowerState">> => RunState}});
