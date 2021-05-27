@@ -13,7 +13,7 @@
 -compile([{parse_transform, lager_transform}]).
 
 %% API
--export([swagger_feeders/0]).
+-export([swagger_modbus_tcp/0]).
 -export([handle/4]).
 
 %% API描述
