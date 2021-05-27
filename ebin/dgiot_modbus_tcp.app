@@ -1,9 +1,0 @@
-{application,dgiot_modbus_tcp,
-             [{description,[26641,34521,23433,29790,31185,24212,29992]},
-              {vsn,"4.0.0"},
-              {modules,[dgiot_modbus_tcp,dgiot_modbus_tcp_app,
-                        dgiot_modbus_tcp_channel,dgiot_modbus_tcp_decoder,
-                        dgiot_modbus_tcp_handler,dgiot_modbus_tcp_sup]},
-              {registered,[dgiot_modbus_tcp_sup]},
-              {applications,[kernel,stdlib,shuwa_framework]},
-              {mod,{dgiot_modbus_tcp_app,[]}}]}.
