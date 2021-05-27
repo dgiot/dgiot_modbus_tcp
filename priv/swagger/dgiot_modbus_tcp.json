@@ -1,11 +1,11 @@
 {
-  "tags": [
-    {
-      "name": "dgiot_modbus_tcp",
-      "description": "dgiot_modbus_tcp"
-    }
-  ],
   "definitions": {},
   "paths": {
-  }
+  },
+  "tags": [
+    {
+      "description": "dgiot_modbus_tcp",
+      "name": "dgiot_modbus_tcp"
+    }
+  ]
 }
