@@ -16,7 +16,6 @@
 
 %% @doc dgiot_modbus_tcp Application
 -module(dgiot_modbus_tcp_app).
--include("dgiot_modbus_tcp.hrl").
 -behaviour(application).
 -emqx_plugin(?MODULE).
 
@@ -29,7 +28,6 @@
 %%--------------------------------------------------------------------
 
 start(_StartType, _StartArgs) ->
-    shuwa_data:init(?dgiot_modbus_tcp_DTU),
     {ok, Sup} = dgiot_modbus_tcp_sup:start_link(),
     Spec =  dgiot_modbus_tcp:start_http(),
     {ok, _} = supervisor:start_child(Sup, Spec),
