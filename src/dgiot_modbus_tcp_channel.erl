@@ -218,7 +218,7 @@ handle_info({deliver, Topic, Msg}, #tcp{state = #state{id = ChannelId, product =
     shuwa_bridge:send_log(ChannelId, "begin from_task: ~ts: ~ts ", [unicode:characters_to_list(Topic), unicode:characters_to_list(Payload)]),
     case jsx:is_json(Payload) of
         true ->
-            Data = jsx:decode(Payload, [{labels, binary}, return_maps]),
+            [Data | _] = jsx:decode(Payload, [{labels, binary}, return_maps]),
             case binary:split(Topic, <<$/>>, [global, trim]) of
                 %%接收task采集指令
                 [<<"thing">>, DtuProductId, DtuAddr] ->
@@ -230,7 +230,7 @@ handle_info({deliver, Topic, Msg}, #tcp{state = #state{id = ChannelId, product =
                                 <<"di">> := Di,
                                 <<"pn">> := SlaveId,
                                 <<"product">> := ProductId,
-                                <<"protocol">> := <<"modbus">>} = Thingdata1} ->
+                                <<"protocol">> := <<"modbus">>}} ->
                                 Datas = modbus_rtu:to_frame(#{
                                     <<"addr">> => SlaveId,
                                     <<"value">> => Value,
@@ -247,8 +247,8 @@ handle_info({deliver, Topic, Msg}, #tcp{state = #state{id = ChannelId, product =
                         end,
                     {noreply, TCPState#tcp{state = State#state{env = Env}, buff = <<>>}};
                 %%接收task汇聚过来的整个dtu物模型采集的数据
-                [App, DtuProductId, DtuAddr] ->
-                    shuwa_pumpdtu:save_dtu(Data#{<<"devaddr">> => DtuAddr, <<"app">> => App}),
+                [_App, DtuProductId, _DtuAddr] ->
+%%                    shuwa_pumpdtu:save_dtu(Data#{<<"devaddr">> => DtuAddr, <<"app">> => App}),
                     {noreply, TCPState};
                 _Other ->
                     lager:info("_Other ~p ", [_Other]),
