@@ -10,7 +10,7 @@
 -author("johnliu").
 -include_lib("shuwa_framework/include/shuwa_socket.hrl").
 -include("dgiot_modbus_tcp.hrl").
--define(TYPE, <<"tcpdebg">>).
+-define(TYPE, <<"MODBUS_TCP">>).
 -define(MAX_BUFF_SIZE, 1024).
 -record(state, {
     id,
@@ -24,7 +24,8 @@
     deviceId = <<>>,
     scale = 10,
     temperature = 0,
-    env = <<>>
+    env = <<>>,
+    dtutype = <<>>
 }).
 %% API
 -export([start/2]).
@@ -118,7 +119,8 @@ init(?TYPE, ChannelId, #{
     <<"heartbeat">> := Heartbeat,
     <<"regtype">> := Type,
     <<"regular">> := Regular,
-    <<"product">> := Products
+    <<"product">> := Products,
+    <<"DTUTYPE">> := Dtutype
 } = _Args) ->
     [{ProdcutId, App} | _] = get_app(Products),
     {Header, Len} = get_header(Regular),
@@ -128,7 +130,8 @@ init(?TYPE, ChannelId, #{
         head = Header,
         len = Len,
         app = App,
-        product = ProdcutId
+        product = ProdcutId,
+        dtutype = Dtutype
     },
     shuwa_data:insert({ChannelId, heartbeat}, {Heartbeat, Port}),
     {ok, State, shuwa_tcp_server:child_spec(?MODULE, shuwa_utils:to_int(Port), State)};
@@ -166,7 +169,7 @@ init(#tcp{state = #state{id = ChannelId}} = TCPState) ->
 
 %% 9C A5 25 CD 00 DB
 %% 11 04 02 06 92 FA FE
-handle_info({tcp, Buff}, #tcp{socket = Socket, state = #state{id = ChannelId, devaddr = <<>>, head = Head, len = Len, product = ProductId} = State} = TCPState) ->
+handle_info({tcp, Buff}, #tcp{socket = Socket, state = #state{id = ChannelId, devaddr = <<>>, head = Head, len = Len, product = ProductId, dtutype = Dtutype} = State} = TCPState) ->
     shuwa_bridge:send_log(ChannelId, "DTU revice from  ~p", [shuwa_utils:binary_to_hex(Buff)]),
     DTUIP = shuwa_evidence:get_ip(Socket),
     DtuAddr = shuwa_utils:binary_to_hex(Buff),
@@ -177,7 +180,7 @@ handle_info({tcp, Buff}, #tcp{socket = Socket, state = #state{id = ChannelId, de
     case re:run(DtuAddr, Head, [{capture, first, list}]) of
         {match, [Head]} when length(List) == Len ->
             {DevId, Devaddr} =
-                case create_device(DeviceId, ProductId, DtuAddr, DTUIP) of
+                case create_device(DeviceId, ProductId, DtuAddr, DTUIP, Dtutype) of
                     {<<>>, <<>>} ->
                         {<<>>, <<>>};
                     {DevId1, Devaddr1} ->
@@ -187,7 +190,7 @@ handle_info({tcp, Buff}, #tcp{socket = Socket, state = #state{id = ChannelId, de
         _Error ->
             case re:run(Buff, Head, [{capture, first, list}]) of
                 {match, [Head]} when length(List1) == Len ->
-                    create_device(DeviceId, ProductId, Buff, DTUIP),
+                    create_device(DeviceId, ProductId, Buff, DTUIP, Dtutype),
                     {noreply, TCPState#tcp{buff = <<>>, state = State#state{devaddr = Buff}}};
                 Error1 ->
                     lager:info("Error1 ~p Buff ~p ", [Error1, shuwa_utils:to_list(Buff)]),
@@ -297,7 +300,7 @@ get_app(Products) ->
         {ProdcutId, App}
               end, Products).
 
-create_device(DeviceId, ProductId, DTUMAC, DTUIP) ->
+create_device(DeviceId, ProductId, DTUMAC, DTUIP, Dtutype) ->
     case shuwa_parse:get_object(<<"Product">>, ProductId) of
         {ok, #{<<"ACL">> := Acl, <<"devType">> := DevType}} ->
             case shuwa_parse:get_object(<<"Device">>, DeviceId) of
@@ -309,7 +312,7 @@ create_device(DeviceId, ProductId, DTUMAC, DTUIP) ->
                 _ ->
                     shuwa_shadow:create_device(#{
                         <<"devaddr">> => DTUMAC,
-                        <<"name">> => <<"USRDTU", DTUMAC/binary>>,
+                        <<"name">> => <<Dtutype/binary, DTUMAC/binary>>,
                         <<"ip">> => DTUIP,
                         <<"isEnable">> => true,
                         <<"product">> => ProductId,
