@@ -88,7 +88,7 @@ handle_info({tcp, Buff}, #tcp{state = #state{id = ChannelId, devaddr = DtuAddr, 
     end,
     {noreply, TCPState#tcp{buff = <<>>, state = State#state{env = <<>>}}};
 
-handle_info({deliver, _Topic, Msg}, #tcp{state = #state{id = ChannelId, product = DtuProductId} = State} = TCPState) ->
+handle_info({deliver, _Topic, Msg}, #tcp{state = #state{id = ChannelId} = State} = TCPState) ->
     case binary:split(shuwa_mqtt:get_topic(Msg), <<$/>>, [global, trim]) of
         [<<"thing">>, _ProductId, _DevAddr] ->
             [#{<<"thingdata">> := ThingData} | _] = jsx:decode(shuwa_mqtt:get_payload(Msg), [{labels, binary}, return_maps]),
@@ -109,7 +109,7 @@ handle_info({deliver, _Topic, Msg}, #tcp{state = #state{id = ChannelId, product 
                 shuwa_bridge:send_log(ChannelId, "to_device: ~p ", [shuwa_utils:binary_to_hex(X)]),
                 shuwa_tcp_server:send(TCPState, X)
                       end, Datas),
-            {noreply, TCPState#{#tcp{state = #state{env =#{product => ProductId, pn => SlaveId, di => Di}}}}};
+            {noreply, TCPState#tcp{state = State#state{env = #{product => ProductId, pn => SlaveId, di => Di}}}};
         _Other ->
             {noreply, TCPState}
     end;
