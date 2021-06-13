@@ -31,4 +31,18 @@
 %%--------------------------------------------------------------------
 
 -define(dgiot_modbus_tcp_DTU, dgiot_modbus_tcp_dtu_ets).
+-record(state, {
+    id,
+    devaddr = <<>>,
+    heartcount = 0,
+    regtype = <<>>,
+    head = "xxxxxx0eee",
+    len = 0,
+    app = <<>>,
+    product = <<>>,
+    deviceId = <<>>,
+    scale = 10,
+    temperature = 0,
+    env = <<>>
+}).
 
