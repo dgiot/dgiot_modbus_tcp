@@ -10,7 +10,7 @@
 -author("johnliu").
 -include_lib("shuwa_framework/include/shuwa_socket.hrl").
 -include("dgiot_modbus_tcp.hrl").
--define(TYPE, <<"tcpdebg">>).
+-define(TYPE, <<"MODBUS_TCP">>).
 -define(MAX_BUFF_SIZE, 1024).
 -record(state, {
     id,
