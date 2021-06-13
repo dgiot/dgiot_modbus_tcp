@@ -88,48 +88,29 @@ handle_info({tcp, Buff}, #tcp{state = #state{id = ChannelId, devaddr = DtuAddr, 
     end,
     {noreply, TCPState#tcp{buff = <<>>, state = State#state{env = <<>>}}};
 
-handle_info({deliver, Topic, Msg}, #tcp{state = #state{id = ChannelId, product = DtuProductId} = State} = TCPState) ->
-    Payload = shuwa_mqtt:get_payload(Msg),
-    shuwa_bridge:send_log(ChannelId, "begin from_task: ~ts: ~ts ", [unicode:characters_to_list(Topic), unicode:characters_to_list(Payload)]),
-    case jsx:is_json(Payload) of
-        true ->
-            Data = jsx:decode(Payload, [{labels, binary}, return_maps]),
-            case binary:split(Topic, <<$/>>, [global, trim]) of
-                %%接收task采集指令
-                [<<"thing">>, DtuProductId, DtuAddr] ->
-                    Env =
-                        case Data of
-                            #{<<"thingdata">> := #{
-                                <<"command">> := <<"r">>,
-                                <<"data">> := Value,
-                                <<"di">> := Di,
-                                <<"pn">> := SlaveId,
-                                <<"product">> := ProductId,
-                                <<"protocol">> := <<"modbus">>} = Thingdata1} ->
-                                Datas = modbus_rtu:to_frame(#{
-                                    <<"addr">> => SlaveId,
-                                    <<"value">> => Value,
-                                    <<"productid">> => ProductId,
-                                    <<"di">> => Di
-                                }),
-                                lists:map(fun(X) ->
-                                    shuwa_bridge:send_log(ChannelId, "to_device: ~p ", [shuwa_utils:binary_to_hex(X)]),
-                                    shuwa_tcp_server:send(TCPState, X)
-                                          end, Datas),
-                                #{product => ProductId, pn => SlaveId, di => Di};
-                            _ ->
-                                <<>>
-                        end,
-                    {noreply, TCPState#tcp{state = State#state{env = Env}, buff = <<>>}};
-                %%接收task汇聚过来的整个dtu物模型采集的数据
-                [App, DtuProductId, DtuAddr] ->
-                    shuwa_pumpdtu:save_dtu(Data#{<<"devaddr">> => DtuAddr, <<"app">> => App}),
-                    {noreply, TCPState};
-                _Other ->
-                    lager:info("_Other ~p ", [_Other]),
-                    {noreply, TCPState}
-            end;
-        false ->
+handle_info({deliver, _Topic, Msg}, #tcp{state = #state{id = ChannelId, product = DtuProductId} = State} = TCPState) ->
+    case binary:split(shuwa_mqtt:get_topic(Msg), <<$/>>, [global, trim]) of
+        [<<"thing">>, _ProductId, _DevAddr] ->
+            [#{<<"thingdata">> := ThingData} | _] = jsx:decode(shuwa_mqtt:get_payload(Msg), [{labels, binary}, return_maps]),
+            #{<<"thingdata">> := #{
+                <<"command">> := <<"r">>,
+                <<"data">> := Value,
+                <<"di">> := Di,
+                <<"pn">> := SlaveId,
+                <<"product">> := ProductId,
+                <<"protocol">> := <<"modbus">>}
+            } = ThingData,
+            Datas = modbus_rtu:to_frame(#{
+                <<"addr">> => SlaveId,
+                <<"value">> => Value,
+                <<"productid">> => ProductId,
+                <<"di">> => Di}),
+            lists:map(fun(X) ->
+                shuwa_bridge:send_log(ChannelId, "to_device: ~p ", [shuwa_utils:binary_to_hex(X)]),
+                shuwa_tcp_server:send(TCPState, X)
+                      end, Datas),
+            {noreply, TCPState#{#tcp{state = #state{env =#{product => ProductId, pn => SlaveId, di => Di}}}}};
+        _Other ->
             {noreply, TCPState}
     end;
 
