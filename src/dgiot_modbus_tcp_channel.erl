@@ -128,7 +128,7 @@ init(?TYPE, ChannelId, #{
     },
 
     shuwa_data:insert({ChannelId, heartbeat}, {Heartbeat, Port}),
-    {ok, State, dgiot_meter_tcp:start(Port, State)};
+    {ok, State, dgiot_modbus_tcp:start(Port, State)};
 
 init(?TYPE, _ChannelId, _Args) ->
     {ok, #{}, #{}}.
