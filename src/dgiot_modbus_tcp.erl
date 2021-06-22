@@ -72,12 +72,14 @@ handle_info({tcp, Buff}, #tcp{socket = Socket, state = #state{id = ChannelId, de
 
 handle_info({tcp, Buff}, #tcp{state = #state{id = ChannelId, devaddr = DtuAddr, env = #{product := ProductId, pn := Pn, di := Di}, product = DtuProductId} = State} = TCPState) ->
     shuwa_bridge:send_log(ChannelId, "revice from  ~p", [shuwa_utils:binary_to_hex(Buff)]),
+    <<H:8, L:8>> = shuwa_utils:hex_to_binary(modbus_rtu:is16(Di)),
+    <<Sh:8, Sl:8>> = shuwa_utils:hex_to_binary(modbus_rtu:is16(Pn)),
     case modbus_rtu:parse_frame(Buff, [], #{
         <<"dtuproduct">> => ProductId,
         <<"channel">> => ChannelId,
         <<"dtuaddr">> => DtuAddr,
-        <<"slaveId">> => shuwa_utils:to_int(Pn),
-        <<"address">> => Di}) of
+        <<"slaveId">> => Sh * 256 + Sl,
+        <<"address">> => H * 256 + L}) of
         {_, Things} ->
             NewTopic = <<"thing/", DtuProductId/binary, "/", DtuAddr/binary, "/post">>,
             shuwa_bridge:send_log(ChannelId, "end to_task: ~p: ~p ~n", [NewTopic, jsx:encode(Things)]),
@@ -92,24 +94,27 @@ handle_info({deliver, _Topic, Msg}, #tcp{state = #state{id = ChannelId} = State}
     case binary:split(shuwa_mqtt:get_topic(Msg), <<$/>>, [global, trim]) of
         [<<"thing">>, _ProductId, _DevAddr] ->
             [#{<<"thingdata">> := ThingData} | _] = jsx:decode(shuwa_mqtt:get_payload(Msg), [{labels, binary}, return_maps]),
-            #{<<"thingdata">> := #{
-                <<"command">> := <<"r">>,
-                <<"data">> := Value,
-                <<"di">> := Di,
-                <<"pn">> := SlaveId,
-                <<"product">> := ProductId,
-                <<"protocol">> := <<"modbus">>}
-            } = ThingData,
-            Datas = modbus_rtu:to_frame(#{
-                <<"addr">> => SlaveId,
-                <<"value">> => Value,
-                <<"productid">> => ProductId,
-                <<"di">> => Di}),
-            lists:map(fun(X) ->
-                shuwa_bridge:send_log(ChannelId, "to_device: ~p ", [shuwa_utils:binary_to_hex(X)]),
-                shuwa_tcp_server:send(TCPState, X)
-                      end, Datas),
-            {noreply, TCPState#tcp{state = State#state{env = #{product => ProductId, pn => SlaveId, di => Di}}}};
+            case ThingData of
+                #{<<"command">> := <<"r">>,
+                    <<"data">> := Value,
+                    <<"di">> := Di,
+                    <<"pn">> := SlaveId,
+                    <<"product">> := ProductId,
+                    <<"protocol">> := <<"modbus">>
+                } ->
+                    Datas = modbus_rtu:to_frame(#{
+                        <<"addr">> => SlaveId,
+                        <<"value">> => Value,
+                        <<"productid">> => ProductId,
+                        <<"di">> => Di}),
+                    lists:map(fun(X) ->
+                        shuwa_bridge:send_log(ChannelId, "to_device: ~p ", [shuwa_utils:binary_to_hex(X)]),
+                        shuwa_tcp_server:send(TCPState, X)
+                              end, Datas),
+                    {noreply, TCPState#tcp{state = State#state{env = #{product => ProductId, pn => SlaveId, di => Di}}}};
+                _ ->
+                    {noreply, TCPState}
+            end;
         _Other ->
             {noreply, TCPState}
     end;
